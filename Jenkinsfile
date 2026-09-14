@@ -3,9 +3,12 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = 'adeelamanat56/myapp'
-        IMAGE_TAG  = "${BUILD_NUMBER}"
-        
+        AWS_REGION = 'ap-south-1'
+        ECR_REGISTRY = '613719615634.dkr.ecr.ap-south-1.amazonaws.com'
+        ECR_REPOSITORY = 'myapp'
+
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
     }
 
     stages {
@@ -16,10 +19,6 @@ pipeline {
             }
         }
 
-        
-
-        s
-
         stage('Build Image') {
             steps {
                 sh '''
@@ -28,35 +27,33 @@ pipeline {
             }
         }
 
-        
-
-        stage('Push to Docker Hub') {
+        stage('Login to ECR') {
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub',
-                        usernameVariable: 'DOCKER_USERNAME',
-                        passwordVariable: 'DOCKER_PASSWORD'
-                    )
-                ]) {
-                    sh '''
-                        echo "$DOCKER_PASSWORD" | docker login \
-                            -u "$DOCKER_USERNAME" \
-                            --password-stdin
+                sh '''
+                    aws ecr get-login-password \
+                    --region ${AWS_REGION} |
+                    docker login \
+                    --username AWS \
+                    --password-stdin ${ECR_REGISTRY}
+                '''
+            }
+        }
 
-                        docker push ${IMAGE}
-
-                        docker logout
-                    '''
-                }
+        stage('Push to ECR') {
+            steps {
+                sh '''
+                    docker push ${IMAGE}
+                '''
             }
         }
 
         stage('Deploy') {
             steps {
                 sh '''
-                    docker compose pull
-                    docker compose up -d
+                    export IMAGE=${IMAGE}
+
+                    docker compose -f compose.yaml pull
+                    docker compose -f compose.yaml up -d
                 '''
             }
         }
@@ -66,7 +63,7 @@ pipeline {
                 sh '''
                     sleep 10
 
-                    docker compose ps
+                    docker compose -f compose.yaml ps
 
                     curl -f http://localhost:5000
 
@@ -86,11 +83,16 @@ pipeline {
             echo "Pipeline failed."
 
             sh '''
-                docker compose ps || true
-                docker compose logs --tail=100 || true
+                docker compose -f compose.yaml ps || true
+                docker compose -f compose.yaml logs --tail=100 || true
             '''
         }
 
-        
+        always {
+            sh '''
+                docker logout ${ECR_REGISTRY} || true
+                docker image prune -f || true
+            '''
+        }
     }
 }
