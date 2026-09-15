@@ -1,4 +1,3 @@
-
 pipeline {
 
     agent any
@@ -88,14 +87,8 @@ pipeline {
                 sh '''
                     aws ssm send-command \
                     --instance-ids ${PRODUCTION_INSTANCE_ID} \
-                    --document-name "AWS-RunShellScript" \
-                    --parameters 'commands=[
-                        "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}",
-                        "cd /opt/myapp",
-                        "export IMAGE=${IMAGE}",
-                        "docker compose pull",
-                        "docker compose up -d"
-                    ]' \
+                    --document-name AWS-RunShellScript \
+                    --parameters '{"commands":["aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 613719615634.dkr.ecr.ap-south-1.amazonaws.com","cd /opt/myapp","export IMAGE='${IMAGE}'","docker compose pull","docker compose up -d"]}' \
                     --region ${AWS_REGION}
                 '''
             }
@@ -133,4 +126,3 @@ pipeline {
         }
     }
 }
-
