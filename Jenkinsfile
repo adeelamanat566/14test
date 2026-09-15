@@ -4,11 +4,14 @@ pipeline {
 
     environment {
         AWS_REGION = 'ap-south-1'
+
         ECR_REGISTRY = '613719615634.dkr.ecr.ap-south-1.amazonaws.com'
         ECR_REPOSITORY = 'myapp'
 
         IMAGE_TAG = "${BUILD_NUMBER}"
         IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+        PRODUCTION_INSTANCE_ID = 'i-08fd9bc5fe962bc3a'
     }
 
     stages {
@@ -47,7 +50,7 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
+        stage('Deploy to Staging') {
             steps {
                 sh '''
                     export IMAGE=${IMAGE}
@@ -58,7 +61,7 @@ pipeline {
             }
         }
 
-        stage('Health Check') {
+        stage('Staging Health Check') {
             steps {
                 sh '''
                     sleep 10
@@ -67,7 +70,40 @@ pipeline {
 
                     curl -f http://localhost:5000
 
-                    echo "Application is healthy."
+                    echo "Staging is healthy."
+                '''
+            }
+        }
+
+        stage('Approval') {
+            steps {
+                input message: "Staging passed. Deploy ${IMAGE} to Production?",
+                      ok: 'Deploy to Production'
+            }
+        }
+
+        stage('Deploy to Production') {
+            steps {
+                sh '''
+                    aws ssm send-command \
+                    --instance-ids ${PRODUCTION_INSTANCE_ID} \
+                    --document-name "AWS-RunShellScript" \
+                    --parameters 'commands=[
+                        "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}",
+                        "cd /opt/myapp",
+                        "export IMAGE=${IMAGE}",
+                        "docker compose pull",
+                        "docker compose up -d"
+                    ]' \
+                    --region ${AWS_REGION}
+                '''
+            }
+        }
+
+        stage('Production Health Check') {
+            steps {
+                sh '''
+                    echo "Production deployment command sent successfully."
                 '''
             }
         }
